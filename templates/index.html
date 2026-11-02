@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<!--
+  index.html — JioSaavn Music Player
+  Features:
+    1. Direct MP3/M4A audio playback via native HTML5 <audio> player
+    2. Search commercial Bollywood, Punjabi, & International songs (JioSaavn API)
+    3. Favorites section powered by browser localStorage (zero database needed)
+    4. One-click heart button on every card to save/remove songs
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My Music Player — JioSaavn</title>
+  <script>
+    // Immediate theme initialization to prevent flash
+    (function() {
+      var savedTheme = localStorage.getItem('music_player_theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', savedTheme);
+    })();
+  </script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}" />
+</head>
+<body>
+
+  <main class="container">
+
+    <!-- ===== APP HEADER (Title & Theme Toggle) ===== -->
+    <header class="app-header">
+      <h1 class="site-title">🎵 My Music Player</h1>
+      <button
+        id="theme-toggle-btn"
+        class="theme-toggle-btn"
+        onclick="toggleTheme()"
+        title="Switch between Light and Dark mode"
+        aria-label="Toggle light or dark theme"
+      >
+        <span class="theme-icon" id="theme-icon">☀️</span>
+        <span class="theme-label" id="theme-label">Light Mode</span>
+      </button>
+    </header>
+
+    <!-- ===== NAVIGATION TABS ===== -->
+    <div class="nav-tabs">
+      <button id="tab-search-btn" class="tab-btn active" onclick="switchTab('search')">
+        🔍 Search Songs
+      </button>
+      <button id="tab-fav-btn" class="tab-btn" onclick="switchTab('favorites')">
+        ❤️ My Favorites (<span id="fav-badge-count">0</span>)
+      </button>
+    </div>
+
+    <!-- ===== TAB 1: SEARCH VIEW ===== -->
+    <div id="view-search" class="tab-view active">
+      <!-- Search Form -->
+      <form class="search-form" action="/search" method="get">
+        <input
+          type="text"
+          name="q"
+          class="search-input"
+          placeholder="Search for song, artist, or album..."
+          value="{{ query }}"
+          autofocus
+          required
+        />
+        <button type="submit" class="search-btn">Search</button>
+      </form>
+
+      <!-- Error / Status Message -->
+      {% if error_message %}
+      <div class="error-box">⚠️ {{ error_message }}</div>
+      {% endif %}
+
+      <!-- Search Results Grid -->
+      {% if results %}
+      <h2 class="section-heading">Search Results</h2>
+      <div class="cards-row">
+        {% for song in results %}
+        <div class="poster-card-wrapper">
+          <div
+            class="poster-card"
+            onclick="playSong('{{ song.id }}', '{{ song.audio_url }}', '{{ song.title | replace("'", "\\'") | replace('"', '&quot;') }}', '{{ song.artist | replace("'", "\\'") | replace('"', '&quot;') }}', '{{ song.thumbnail }}')"
+          >
+            <div class="poster-img-wrap">
+              {% if song.thumbnail %}
+                <img src="{{ song.thumbnail }}" alt="{{ song.title }}" class="poster-img" />
+              {% else %}
+                <div class="no-poster">No Image</div>
+              {% endif %}
+              <div class="poster-play">▶</div>
+            </div>
+            <p class="poster-title">{{ song.title }}</p>
+            <p class="poster-channel">{{ song.artist }}</p>
+          </div>
+
+          <!-- Quick Favorite Heart Button -->
+          <button
+            class="fav-toggle-btn"
+            id="fav-btn-{{ song.id }}"
+            title="Save to Favorites"
+            onclick="toggleFavorite('{{ song.id }}', '{{ song.audio_url }}', '{{ song.title | replace("'", "\\'") | replace('"', '&quot;') }}', '{{ song.artist | replace("'", "\\'") | replace('"', '&quot;') }}', '{{ song.thumbnail }}', event)"
+          >
+            🤍
+          </button>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <!-- Welcome State -->
+      {% if not query %}
+      <div class="empty-state">
+        <div class="empty-icon">🎧</div>
+        <p>Type any song name above to stream direct high-quality audio!</p>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- ===== TAB 2: FAVORITES VIEW ===== -->
+    <div id="view-favorites" class="tab-view">
+      <h2 class="section-heading">❤️ My Favorite Songs</h2>
+      <div id="favorites-grid" class="cards-row">
+        <!-- Rendered dynamically from browser localStorage -->
+      </div>
+      <div id="favorites-empty" class="empty-state" style="display:none;">
+        <div class="empty-icon">🤍</div>
+        <p>You haven't saved any favorite songs yet.<br>Click the heart icon 🤍 on any song to save it here!</p>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="footer">
+    <p>My Music Player &mdash; Powered by JioSaavn API &mdash; 1st Semester College Project</p>
+  </footer>
+
+  <!-- =====================================================
+       NATIVE HTML5 AUDIO PLAYER MODAL
+       Direct MP3/M4A streaming with seekbar, volume, and timer
+       ===================================================== -->
+  <div id="modal-overlay">
+    <div id="audio-player-card">
+
+      <!-- Close Button -->
+      <button id="close-btn" onclick="closeAudioPlayer()" title="Close Player">✕</button>
+
+      <!-- Top Bar: Badge and Favorite Button -->
+      <div class="player-top-bar">
+        <div class="audio-badge">
+          <span class="live-pulse"></span> DIRECT AUDIO STREAM
+        </div>
+        <button id="player-fav-btn" class="ctrl-btn fav-main-btn" onclick="toggleCurrentPlayerFavorite()">
+          🤍 Save
+        </button>
+      </div>
+
+      <!-- Album Cover & Meta -->
+      <div class="player-meta-row">
+        <img id="player-album-art" src="" alt="Album Art" class="player-mini-art" />
+        <div class="player-titles">
+          <h2 id="player-song-title" class="player-title">Song Title</h2>
+          <p id="player-song-artist" class="player-channel">Artist Name</p>
+        </div>
+      </div>
+
+      <!-- Native HTML5 Audio Player (Scrubber, Volume, Play/Pause) -->
+      <div class="native-audio-wrap">
+        <audio id="html5-audio" controls autoplay>
+          Your browser does not support the audio element.
+        </audio>
+      </div>
+
+    </div><!-- end audio-player-card -->
+  </div><!-- end modal-overlay -->
+
+
+  <!-- =====================================================
+       JAVASCRIPT — Audio Playback & Favorites Management
+       ===================================================== -->
+  <script>
+    // State of currently loaded song
+    var currentSong = {
+      id: '',
+      audioUrl: '',
+      title: '',
+      artist: '',
+      thumbnail: ''
+    };
+
+    // Load favorites from browser localStorage
+    function getFavorites() {
+      try {
+        var favs = localStorage.getItem('jiosaavn_music_favorites');
+        return favs ? JSON.parse(favs) : [];
+      } catch (e) {
+        return [];
+      }
+    }
+
+    function saveFavorites(favList) {
+      localStorage.setItem('jiosaavn_music_favorites', JSON.stringify(favList));
+      updateFavoritesUI();
+    }
+
+    function isFavorite(songId) {
+      var favs = getFavorites();
+      return favs.some(function(s) { return s.id === songId; });
+    }
+
+    // Toggle favorite state
+    function toggleFavorite(id, audioUrl, title, artist, thumbnail, event) {
+      if (event) {
+        event.stopPropagation(); // prevent opening player when clicking heart
+      }
+
+      var favs = getFavorites();
+      var index = favs.findIndex(function(s) { return s.id === id; });
+
+      if (index > -1) {
+        favs.splice(index, 1);
+      } else {
+        favs.unshift({
+          id: id,
+          audioUrl: audioUrl,
+          title: title,
+          artist: artist,
+          thumbnail: thumbnail
+        });
+      }
+
+      saveFavorites(favs);
+    }
+
+    // Toggle favorite from inside the player card
+    function toggleCurrentPlayerFavorite() {
+      if (!currentSong.id) return;
+      toggleFavorite(
+        currentSong.id,
+        currentSong.audioUrl,
+        currentSong.title,
+        currentSong.artist,
+        currentSong.thumbnail
+      );
+      updateModalFavButton();
+    }
+
+    // Update favorite button text inside the player modal
+    function updateModalFavButton() {
+      var favBtn = document.getElementById('player-fav-btn');
+      if (isFavorite(currentSong.id)) {
+        favBtn.innerHTML = '❤️ Saved';
+        favBtn.classList.add('is-fav');
+      } else {
+        favBtn.innerHTML = '🤍 Save';
+        favBtn.classList.remove('is-fav');
+      }
+    }
+
+    // Update heart icons on cards and render the Favorites tab
+    function updateFavoritesUI() {
+      var favs = getFavorites();
+
+      // Update badge count
+      var badge = document.getElementById('fav-badge-count');
+      if (badge) badge.textContent = favs.length;
+
+      // Update heart buttons on any visible search result cards
+      var allFavBtns = document.querySelectorAll('.fav-toggle-btn');
+      allFavBtns.forEach(function(btn) {
+        var songId = btn.id.replace('fav-btn-', '');
+        if (isFavorite(songId)) {
+          btn.innerHTML = '❤️';
+          btn.classList.add('active');
+        } else {
+          btn.innerHTML = '🤍';
+          btn.classList.remove('active');
+        }
+      });
+
+      // Render Favorites Grid
+      var grid = document.getElementById('favorites-grid');
+      var emptyMsg = document.getElementById('favorites-empty');
+
+      if (!grid) return;
+
+      if (favs.length === 0) {
+        grid.innerHTML = '';
+        if (emptyMsg) emptyMsg.style.display = 'block';
+      } else {
+        if (emptyMsg) emptyMsg.style.display = 'none';
+        var html = '';
+        favs.forEach(function(s) {
+          var safeTitle = (s.title || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+          var safeArtist = (s.artist || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+
+          html += '<div class="poster-card-wrapper">';
+          html += '  <div class="poster-card" onclick="playSong(\'' + s.id + '\', \'' + s.audioUrl + '\', \'' + safeTitle + '\', \'' + safeArtist + '\', \'' + s.thumbnail + '\')">';
+          html += '    <div class="poster-img-wrap">';
+          if (s.thumbnail) {
+            html += '      <img src="' + s.thumbnail + '" alt="' + safeTitle + '" class="poster-img" />';
+          } else {
+            html += '      <div class="no-poster">No Image</div>';
+          }
+          html += '      <div class="poster-play">▶</div>';
+          html += '    </div>';
+          html += '    <p class="poster-title">' + s.title + '</p>';
+          html += '    <p class="poster-channel">' + s.artist + '</p>';
+          html += '  </div>';
+          html += '  <button class="fav-toggle-btn active" title="Remove from Favorites" onclick="toggleFavorite(\'' + s.id + '\', \'' + s.audioUrl + '\', \'' + safeTitle + '\', \'' + safeArtist + '\', \'' + s.thumbnail + '\', event)">❤️</button>';
+          html += '</div>';
+        });
+        grid.innerHTML = html;
+      }
+
+      updateModalFavButton();
+    }
+
+    // Switch between "Search" and "My Favorites" tabs
+    function switchTab(tab) {
+      var searchView = document.getElementById('view-search');
+      var favView = document.getElementById('view-favorites');
+      var searchTabBtn = document.getElementById('tab-search-btn');
+      var favTabBtn = document.getElementById('tab-fav-btn');
+
+      if (tab === 'favorites') {
+        searchView.classList.remove('active');
+        favView.classList.add('active');
+        searchTabBtn.classList.remove('active');
+        favTabBtn.classList.add('active');
+        updateFavoritesUI();
+      } else {
+        favView.classList.remove('active');
+        searchView.classList.add('active');
+        favTabBtn.classList.remove('active');
+        searchTabBtn.classList.add('active');
+      }
+    }
+
+    // Play Song via native HTML5 Audio Player
+    function playSong(id, audioUrl, title, artist, thumbnail) {
+      currentSong = {
+        id: id,
+        audioUrl: audioUrl,
+        title: title,
+        artist: artist,
+        thumbnail: thumbnail
+      };
+
+      document.getElementById('player-song-title').textContent = title;
+      document.getElementById('player-song-artist').textContent = artist;
+      document.getElementById('player-album-art').src = thumbnail || '';
+
+      updateModalFavButton();
+
+      // Set audio source and play
+      var audio = document.getElementById('html5-audio');
+      audio.src = audioUrl;
+      audio.play().catch(function(err) {
+        console.log('Audio autoplay prevented or error:', err);
+      });
+
+      // Show player modal
+      document.getElementById('modal-overlay').classList.add('active');
+    }
+
+    // Close Audio Player and pause music
+    function closeAudioPlayer() {
+      document.getElementById('modal-overlay').classList.remove('active');
+      var audio = document.getElementById('html5-audio');
+      audio.pause();
+      audio.src = '';
+    }
+
+    // Close on backdrop click
+    document.getElementById('modal-overlay').addEventListener('click', function(e) {
+      if (e.target === this) {
+        closeAudioPlayer();
+      }
+    });
+
+    // Close on Escape key
+    document.addEventListener('keydown', function(e) {
+      if (e.key === 'Escape') closeAudioPlayer();
+    });
+
+    // ===== THEME SWITCHER LOGIC =====
+    function initTheme() {
+      var currentTheme = localStorage.getItem('music_player_theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', currentTheme);
+      updateThemeUI(currentTheme);
+    }
+
+    function toggleTheme() {
+      var current = document.documentElement.getAttribute('data-theme') || 'dark';
+      var next = (current === 'dark') ? 'light' : 'dark';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('music_player_theme', next);
+      updateThemeUI(next);
+    }
+
+    function updateThemeUI(theme) {
+      var icon = document.getElementById('theme-icon');
+      var label = document.getElementById('theme-label');
+      if (theme === 'light') {
+        if (icon) icon.textContent = '🌙';
+        if (label) label.textContent = 'Dark Mode';
+      } else {
+        if (icon) icon.textContent = '☀️';
+        if (label) label.textContent = 'Light Mode';
+      }
+    }
+
+    // Initialize UI on page load
+    window.addEventListener('DOMContentLoaded', function() {
+      initTheme();
+      updateFavoritesUI();
+    });
+  </script>
+
+</body>
+</html>

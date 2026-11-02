@@ -1,0 +1,10 @@
+# requirements.txt
+# ----------------
+# This file lists all the Python libraries our project needs.
+# Run:  pip install -r requirements.txt
+# to install all of them at once.
+
+flask==3.1.0          # The web framework — turns Python into a web server
+requests==2.32.3      # Lets Python make HTTP requests (call the YouTube API)
+python-dotenv==1.0.1  # Loads secret keys from the .env file
+pyDes==2.0.1          # Decrypts direct full-length 320kbps audio streams from JioSaavn
