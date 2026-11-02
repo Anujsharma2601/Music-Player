@@ -81,11 +81,23 @@ Play Music: Click on any song card to launch the native audio player modal and b
 Seek & Volume: Use the native HTML5 player scrubber to jump forward/backward or adjust audio levels.
 Save Favorites: Click the heart button on any card or inside the player to bookmark songs in the My Favorites tab.
 Toggle Themes: Click the ☀️ Light Mode / 🌙 Dark Mode button in the top right to switch visual styles.
+🌐 Deploy to Render
+
+When creating a new Web Service on Render
+:
+
+Setting	Value
+Environment	Python
+Region	Any (e.g. Singapore or Oregon)
+Branch	main
+Build Command	pip install -r requirements.txt
+Start Command	gunicorn app:app (or python app.py)
 📦 Dependencies
 Package	Version	Purpose
 Flask	==3.1.0	Lightweight WSGI web application framework
 requests	==2.32.3	HTTP library for querying audio endpoints
 pyDes	==2.0.1	DES decryption algorithm for JioSaavn CDN audio streams
+gunicorn	==23.0.0	Production WSGI HTTP server for Render deployment
 python-dotenv	==1.0.1	Environment configuration support
 🤝 Contributing
 
